@@ -1,0 +1,42 @@
+name: "CI: Security and Cost Audit"
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-audit:
+    runs-on: ubuntu-latest
+    # We use a slim container to show optimization
+    container:
+      image: python:3.12-slim
+
+    steps:
+      - name: 'Checkout Code'
+        uses: actions/checkout@v4
+
+      - name: 'Install Dependencies'
+        run: |
+          apt-get update && apt-get install -y curl unzip git gnupg software-properties-common
+          # Install Terraform
+          curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bookworm main" | tee /etc/apt/sources.list.d/hashicorp.list
+          apt-get update && apt-get install -y terraform
+          # Install Infracost
+          curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+
+      - name: 'Terraform Validate'
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: 'DevSecOps: Checkov Security Scan'
+        run: |
+          pip install --no-cache-dir checkov
+          checkov -d . --framework terraform --soft-fail
+
+      - name: 'FinOps: Infracost Cost Estimate'
+        run: |
+          infracost breakdown --path .
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
