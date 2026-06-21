@@ -17,12 +17,14 @@ jobs:
 
       - name: 'Install Dependencies'
         run: |
-          apt-get update && apt-get install -y curl unzip git gnupg software-properties-common
-          # Install Terraform
+          apt-get update && apt-get install -y curl unzip git gnupg
+          # 1. Download HashiCorp GPG Key
           curl -fsSL https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          # 2. Manually add the repository
           echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com bookworm main" | tee /etc/apt/sources.list.d/hashicorp.list
+          # 3. Update and Install
           apt-get update && apt-get install -y terraform
-          # Install Infracost
+          # 4. Install Infracost
           curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
 
       - name: 'Terraform Validate'
