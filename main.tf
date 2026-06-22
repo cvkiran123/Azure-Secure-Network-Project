@@ -10,6 +10,8 @@ terraform {
 
 provider "azurerm" {
   features {}
+  # Prevents 403 errors by skipping automatic registration of unused providers
+  skip_provider_registration = true
 }
 
 # 2. Create a Resource Group
@@ -20,37 +22,35 @@ resource "azurerm_resource_group" "rg" {
 
 # 3. Create the Virtual Network (VNet)
 resource "azurerm_virtual_network" "vnet" {
-  name                = "dev-vnet"
+  name                = "vnet-secure-dev"
   address_space       = ["10.0.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 }
 
-# 4. Create a Budget Alert (FinOps)
+# 4. Create a Budget Alert (FinOps Governance)
 resource "azurerm_consumption_budget_resource_group" "budget" {
-  name              = "project-budget"
+  name              = "budget-monthly-limit"
   resource_group_id = azurerm_resource_group.rg.id
-  amount            = 5 # The total amount of money in your currency (e.g., $5)
+  amount            = 5 
   time_grain        = "Monthly"
 
   time_period {
-    start_date = "2024-06-01T00:00:00Z" # Must be first of the month
-    end_date   = "2025-07-01T00:00:00Z"
+    start_date = "2026-06-01T00:00:00Z" 
+    end_date   = "2027-06-01T00:00:00Z"
   }
 
   notification {
     enabled   = true
-    threshold = 80.0 # Alert when 80% of budget ($4) is reached
+    threshold = 80.0 # Alert when $4 is reached
     operator  = "GreaterThan"
-    contact_emails = [
-      "cvkiran4@gmail.com", # Email to receive budget alerts
-    ]
+    contact_emails = ["cvkiran4@gmail.com"]
   }
 }
 
 # 5. Create a Subnet
 resource "azurerm_subnet" "subnet" {
-  name                 = "internal-subnet"
+  name                 = "snet-internal"
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/24"]
@@ -58,20 +58,20 @@ resource "azurerm_subnet" "subnet" {
 
 # 6. Create a Network Security Group (The Firewall)
 resource "azurerm_network_security_group" "nsg" {
-  name                = "dev-nsg"
+  name                = "nsg-secure-dev"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
-  # SECURITY MISTAKE: Allowing SSH (Port 22) from the whole internet
+  # Security: Restricting SSH (Port 22) to internal traffic only
   security_rule {
-    name                       = "AllowSSH"
+    name                       = "AllowInternalSSH"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "22"
-    source_address_prefix      = "10.0.0.0/16"
+    source_address_prefix      = "10.0.0.0/16" 
     destination_address_prefix = "*"
   }
 }
@@ -82,11 +82,25 @@ resource "azurerm_subnet_network_security_group_association" "link" {
   network_security_group_id = azurerm_network_security_group.nsg.id
 }
 
-# 8. Create a Public IP (To see the cost impact)
+# 8. Create a Public IP (To audit cost impact)
 resource "azurerm_public_ip" "pip" {
-  name                = "dev-public-ip"
+  name                = "pip-dev-audit"
   resource_group_name  = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   allocation_method   = "Static"
   sku                 = "Standard"
+}
+
+# 9. Managed Identity for Application
+resource "azurerm_user_assigned_identity" "project_identity" {
+  name                = "id-secure-vnet-dev"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+# 10. Enforce Principle of Least Privilege (RBAC Assignment)
+resource "azurerm_role_assignment" "reader_access" {
+  scope                = azurerm_resource_group.rg.id
+  role_definition_name = "Reader" # Least privilege: View-only access
+  principal_id         = azurerm_user_assigned_identity.project_identity.principal_id
 }
